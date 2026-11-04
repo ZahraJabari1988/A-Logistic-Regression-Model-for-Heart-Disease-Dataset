@@ -1,0 +1,168 @@
+suppressWarnings({library(dplyr)})
+suppressWarnings({library(tidyr)})
+suppressWarnings({library(Matrix)})
+suppressWarnings({library(corrplot)})
+suppressWarnings({library(ggplot2)})
+suppressWarnings({library(lmtest)})
+suppressWarnings({library(GGally)})
+suppressWarnings({library(caTools)})
+suppressWarnings({library(lmtest)})
+suppressWarnings({library(MASS)})
+suppressWarnings({library(pROC)})
+suppressWarnings({library(cowplot)})
+#----------------------------------------------------------------------
+#                        Section 1
+#----------------------------------------------------------------------
+data_cleveland<-read.csv(file="D:/cleveland.csv",header=F,sep=",")
+names<-c("age","sex","cp","trestbps","chol","fbs","restecg","thalach",
+          "exang","oldpeak","slope","ca","thal","heart_disease")
+colnames(data_cleveland)<-names 
+str(data_cleveland)
+head(data_cleveland)
+#----------------------------------------------------------------------
+data_cleveland<-data_cleveland%>%
+    mutate(heart_disease=case_when(heart_disease==0~"absence",
+                            TRUE ~"presence"))
+data_cleveland<-data_cleveland%>%
+    mutate(heart_disease=case_when(heart_disease=="absence"~0,
+                            heart_disease=="presence"~1))
+data_cleveland<-data_cleveland%>%drop_na()
+#----------------------------------------------------------------------
+#                        Section 2
+#----------------------------------------------------------------------
+dist_plot<-ggplot(data_cleveland,aes(x=heart_disease))+
+geom_bar(fill=c("0"="blue","1"="red"),color="black",stat="count")+
+labs(title="Plot(b)",x="heart disease",y="Frequency") 
+dist_plot
+#----------------------------------------------------------------------
+age.plot<-ggplot(data_cleveland,aes(x=age,fill=factor(heart_disease)))+
+geom_histogram(binwidth=4,position="dodge",color="grey")+
+scale_fill_manual(values=c("0"="blue","1"="red"),labels=c("No Disease","Disease"))+
+facet_wrap(~heart_disease,scales="free_y")+ý
+    labs(title="Plot(a)", x = "Age (years)", y = "Count", fill = "Heart Disease")
+age.plot
+#----------------------------------------------------------------------
+sex_plot<-ggplot(data_cleveland,aes(x=factor(sex),fill=factor(heart_disease)))+geom_bar()+
+labs(title="Plot(c)",x="Gender(0=Female,1=Male)",y="Frequency")+
+scale_fill_manual(values=c("0"="blue","1"="red"), 
+                  labels=c("No Disease","Disease"))+
+labs(x="Gender(0=Female,1=Male)",y="Count",fill="Heart Disease")
+sex_plotý
+plot_grid(age_plot,plot_grid(dist_plot,sex_plot), ncol = 1) 
+#----------------------------------------------------------------------
+corr_mat<-cor(data_cleveland,method="pearson") 
+ggcorr(data_cleveland,label=TRUE,label_size=2.5,hjust=1,layout.exp=2)
+#----------------------------------------------------------------------
+summary_table<-summary(data_cleveland)
+t(summary_table)
+#----------------------------------------------------------------------
+#                        Section 3
+#----------------------------------------------------------------------
+heart_full_model<-glm(heart_disease~.,data=data_cleveland,family=binomial(logit))
+summary(heart_full_model)
+#----------------------------------------------------------------------
+#                        Section (3-1)
+#----------------------------------------------------------------------
+aplha<-0.05
+r_Stud_Res<-stdres(heart_full_model)
+t_range<-3
+Data_outliers_Stud_Res<-abs(r_Stud_Res)[abs(r_Stud_Res)>t_range]
+id_Data_outliers_Stud_Res<-which(abs(r_Stud_Res)>t_range)
+result_Data_outliers_Stud_Res<-data.frame(id_Data_outliers_Stud_Res,ý
+                                   abs(r_Stud_Res)[id_Data_outliers_Stud_Res])
+colnames(result_Data_outliers_Stud_Res)<-c("Id","|Studentized Residuals|")
+data_outliers_plot<-ggplot(data.frame(1:nrow(data_cleveland),abs(r_Stud_Res)),
+    aes(x=1:nrow(data_cleveland),y=abs(r_Stud_Res)))+ 
+    geom_point(size=2)+geom_path()+
+    geom_hline(yintercept=0,linetype="dashed",color="blue",size=1)+
+    geom_hline(yintercept=3,linetype="dashed",color="blue",size=1)+
+    xlab("Observation")+ylab("|Studentized Residuals|")+
+    labs(title="|Studentized Residuals|")
+data_outliers_plotý
+#-----------------------------------------------------------------
+if(length(Data_outliers_Stud_Res)>0){
+cat("\n Outliers and Unusual Points based on Studentized Residuals(r_Stud_Res)\n")
+print(result_Data_outliers_Stud_Res)
+}else{
+cat("\n No outliers in data based on Studentized Residuals(r_Stud_Res)\n")
+}
+#----------------------------------------------------------------------
+data_cleveland_new<-data_cleveland[-id_Data_outliers_Stud_Res,]
+heart_full_model_new<-glm(heart_disease~.,data=data_cleveland_new,family=binomial(logit))
+summary(heart_full_model_new)
+#----------------------------------------------------------------------
+#                        Section (3-2)
+#----------------------------------------------------------------------
+res_VIF<-matrix(car::vif(heart_full_model_new),13,1)
+rownames(res_VIF)<-names[-14]
+colnames(res_VIF)<-"VIF"
+res_VIF
+#----------------------------------------------------------------------
+#                        Section 4
+#----------------------------------------------------------------------
+model1<-glm(heart_disease~.,data=data_cleveland_new,family=binomial(logit))
+model2<-glm(heart_disease~sex+cp+trestbps+chol+fbs+restecg+thalach+exang+ý
+                 oldpeak+slope+ca+thal,data=data_cleveland_new,family=binomial(logit))
+model3<-glm(heart_disease~sex+cp+trestbps+chol+fbs+thalach+exang+oldpeak+slope+ca+thal,
+            data=data_cleveland_new,family=binomial(logit))
+model4<-glm(heart_disease~sex+cp+trestbps+chol+fbs+thalach+exang+slope+ca+thal,
+            data=data_cleveland_new,family=binomial(logit))
+model5<-glm(heart_disease~sex+cp+trestbps+fbs+thalach+exang+slope+ca+thal,
+            data=data_cleveland_new,family=binomial(logit))
+#----------------------------------------------------------------------
+deviance_vec<-c(deviance(model1),deviance(model2),deviance(model3),ý
+                         deviance(model4),deviance(model5))
+df_vec<-c(df.residual(model1),df.residual(model2),df.residual(model3),ý
+               df.residual(model4),df.residual(model5))
+AIC_vec<-c(AIC(model1),AIC(model2),AIC(model3),AIC(model4),AIC(model5))
+Diff_deviance<-c(0,deviance_vec[2]-deviance_vec[1],deviance_vec[3]-deviance_vec[2],
+                deviance_vec[4]-deviance_vec[3],deviance_vec[5]-deviance_vec[4])
+Diff_deviance<-round(Diff_deviance,4)
+pValue1<-1-pchisq(Diff_deviance[2],1)
+pValue2<-1-pchisq(Diff_deviance[3],1)
+pValue3<-1-pchisq(Diff_deviance[4],1)
+pValue4<-1-pchisq(Diff_deviance[5],1)
+pValue_vec<-c(0,pValue1,pValue2,pValue3,pValue4)
+pValue_vec<-round(pValue_vec,4)
+model_compared<-c("-","2-1","3-2","4-3","5-4")
+Table5<-data.frame(deviance_vec,df_vec,AIC_vec,model_compared,Diff_deviance,pValue_vec)
+rownames(Table5)<-c("Model 1","Model 2","Model 3","Model 4","Model 5")
+#----------------------------------------------------------------------
+best_model<-step(heart_full_model_new)
+summary(best_model)ý
+#-------------------------------------------------
+nullModel<-glm(heart_disease~1,family=binomial(link=logit),data=data_cleveland_new) 
+fullModel<-glm(heart_disease~age+sex+cp+trestbps+chol+fbs+restecg+thalach+exang+ý
+                     oldpeak+slope+ca+thal,family=binomial(link=logit),data=data_cleveland_new)
+summary(stepAIC(fullModel,direction="backward",
+                scope=list(upper=fullModel,lower=nullModel), 
+                trace=F))
+#----------------------------------------------------------------------
+#                        Section 5
+#----------------------------------------------------------------------
+models.probs_best<-predict(model4,data_cleveland_new,type="response")
+models.pred_best<-rep(0,length(models.probs_best))
+models.pred_best[models.probs_best>0.5] <- 1
+Table_model_performance_best<-table(models.pred_best,data_cleveland_new$heart_disease,
+                          dnn = c("Predicted Status","Observed Status"))
+Table_model_performance_best
+prop.table(Table_model_performance_best)
+#----------------------------------------------------------------------
+models.probs_full<-predict(model1,data_cleveland_new,type="response")
+models.pred_full<-rep(0,length(models.probs_full))
+models.pred_full[models.probs_full>0.5] <- 1
+Table_model_performance_full<-table(models.pred_full,data_cleveland_new$heart_disease,
+                          dnn = c("Predicted Status","Observed Status"))
+Table_model_performance_full
+prop.table(Table_model_performance_full)
+#----------------------------------------------------------------------
+odds_ratio_full<-exp(coef(model1))
+round(odds_ratio_full,3)
+#----------------------------------------------------------------------
+odds_ratio_best<-exp(coef(model4))
+round(odds_ratio_best,3)ý
+ý#----------------------------------------------------------------------
+ýROC_best<-roc(data_cleveland_new$heart_disease~models.probs_best,plot=TRUE,print.auc=TRUE)
+as.numeric(ROC_best$auc)
+ROC__full<-roc(data_cleveland_new$heart_disease~models.probs_full,plot=TRUE,print.auc=TRUE)
+as.numeric(ROC__full$auc)
